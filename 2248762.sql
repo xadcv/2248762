@@ -1176,17 +1176,17 @@ accounts AS (
     
     UNION ALL
     
-    -- ========================================================= Provisions for slashing insurance set aside 
+    -- ========================================================= Provisions for slashing set aside 
     -- On the same side of the balance sheet, a decrease in equity must be associated with an increase in liabilities to balance
-    -- Slashing insurance should go to an effective liability account through the following steps:
+    -- Slashing provision should go to an effective liability account through the following steps:
     -- 1. Recognize the expense and the contra asset account 
-    -- 2. Recognize the insurance liability and the associated asset account
+    -- 2. Recognize the slashing liability and the associated asset account
     
     SELECT  calendar.period,
             '3. Surplus' AS primary_label,
             '3.2. Operating Performance' AS secondary_label,
             '3.2.2. Cost of Revenue' AS account,
-            '3.2.2.2. Provision for slashing insurance (-)' AS category,
+            '3.2.2.2. Provision for slashing (-)' AS category,
             
             -SUM(COALESCE(insurance_revenue,0)),
             coalesce(token,LOWER('0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84')) AS token
@@ -1198,8 +1198,8 @@ accounts AS (
     
     SELECT  calendar.period,
             '1. Assets' AS primary_label,
-            '1.2. Slashing Insurance Fund' AS secondary_label,
-            '1.2.2. Slashing Insurance Contra Assets' AS account,
+            '1.2. Slashing Provision' AS secondary_label,
+            '1.2.2. Slashing Provision Contra Assets' AS account,
             '-' AS category,
             
             -SUM(COALESCE(insurance_revenue,0)),
@@ -1212,8 +1212,8 @@ accounts AS (
     
     SELECT  calendar.period,
             '2. Liabilities' AS primary_label,
-            '2.2. Slashing Insurance Fund' AS secondary_label,
-            '2.2.1. Slashing Insurance' AS account,
+            '2.2. Slashing Provision' AS secondary_label,
+            '2.2.1. Slashing Provision' AS account,
             '-' AS category,
             
             SUM(COALESCE(insurance_revenue,0)),
@@ -1226,8 +1226,8 @@ accounts AS (
     
     SELECT  calendar.period,
             '1. Assets' AS primary_label,
-            '1.2. Slashing Insurance Fund' AS secondary_label,
-            '1.2.1. Slashing Insurance Assets' AS account,
+            '1.2. Slashing Provision' AS secondary_label,
+            '1.2.1. Slashing Provision' AS account,
             '-' AS category,
             
             SUM(COALESCE(insurance_revenue,0)),
@@ -1688,10 +1688,10 @@ accounts AS (
             '3.1. Protocol Capital' AS secondary_label,
             '3.1.1. Protocol Assets' AS account,
             CASE
-                WHEN token = LOWER('0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84') THEN '1.3.1.1. stETH'
-                WHEN token = LOWER('0x6B175474E89094C44Da98b954EedeAC495271d0F') THEN '1.3.1.2. DAI'
-                WHEN token = LOWER('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') THEN '1.3.1.3. ETH'
-                ELSE '1.3.1.4. Other'
+                WHEN token = LOWER('0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84') THEN '3.1.1.1. stETH'
+                WHEN token = LOWER('0x6B175474E89094C44Da98b954EedeAC495271d0F') THEN '3.1.1.2. DAI'
+                WHEN token = LOWER('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2') THEN '3.1.1.3. ETH'
+                ELSE '3.1.1.4. Other'
             END AS category,
             CAST(SUM(fundraising.amount_token) AS DOUBLE),
             token
@@ -1919,160 +1919,3 @@ surplus_m2m AS (
 SELECT * FROM final_m2ms
 UNION ALL 
 SELECT * FROM surplus_m2m
-
-
-/*
-final_m2ms AS (
-        SELECT   
-            period, 
-            primary_label, 
-            secondary_label, 
-            account, 
-            category, 
-            subcategory,
-            value_base_token,
-            base_token,
-            period_price, 
-            CASE WHEN subcategory = 'A. Historical value' THEN value_usd
-                 WHEN subcategory = 'B. M2M' THEN delta_m2m_new
-            END AS value_translation_usd
-        
-        FROM (
-           
-            SELECT
-                period, 
-                primary_label, 
-                secondary_label, 
-                account, 
-                category, 
-                subcategory,
-                value_base_token, 
-                base_token,
-                period_price, 
-                value_usd,  
-                delta_m2m_new   
-            
-            FROM (
-           
-            SELECT  
-                period, 
-                primary_label, 
-                secondary_label, 
-                account, category, 
-                'A. Historical value' AS subcategory,
-                value_base_token, 
-                base_token, 
-                (value_usd/value_base_token) AS period_price, 
-                value_usd, 
-                value_usd AS delta_m2m, 
-                0 AS delta_m2m_new 
-            FROM accounts
-            --where account like '%1.1.1. Staked ETH%'
-            WHERE (primary_label like '%1. Assets%' OR primary_label like  '%2. Liabilities%' ) AND base_token != 'LDO'
-            
-            UNION ALL
-            
-            SELECT  
-                period, 
-                primary_label, 
-                secondary_label, 
-                account, 
-                category, 
-                subcategory, 
-                value_base_token, 
-                base_token, 
-                token_price as period_price,
-                value_usd,
-                delta_m2m, 
-                delta_m2m - COALESCE(lag(delta_m2m) OVER (PARTITION BY primary_label, secondary_label, account, category ORDER BY period), 0) AS delta_m2m_new 
-            FROM (
-                select  
-                    period,
-                    primary_label, 
-                    secondary_label, 
-                    account, 
-                    category, 
-                    'B. M2M' AS subcategory, 
-                    0 as value_base_token,--coalesce(value_base_token, 0) as value_base_token,
-                    base_token, 
-                    --base_token_address, 
-                    token_price, 
-                    0 as value_usd, 
-                    coalesce(token_price*sum(coalesce(value_base_token, 0)) over (partition by primary_label, secondary_label, account, category, 
-                        base_token order by period) - 
-                        coalesce(lag(token_price*sum(coalesce(value_base_token, 0)) over (partition by primary_label, secondary_label, account, category, base_token order by period))
-                        over (partition by primary_label, secondary_label, account, category, base_token order by period),0), 0) - coalesce(value_usd,0) as delta_m2m
-                FROM accounts
-        
-                WHERE (primary_label like '%1. Assets%' OR primary_label like  '%2. Liabilities%' ) AND base_token != 'LDO'
-        
-                UNION ALL
-                
-                SELECT  
-                    period,
-                    primary_label,
-                    secondary_label,
-                    account,
-                    category,
-                    'A. Historical value' AS subcategory,
-                    value_base_token,
-                    base_token,
-                    (value_usd/value_base_token) AS period_price,
-                    value_usd,
-                    0
-                FROM accounts
-                WHERE (primary_label LIKE '%1. Assets%' OR primary_label LIKE  '%2. Liabilities%') AND base_token = 'LDO'
-                
-                UNION ALL
-                
-                SELECT  
-                    period,
-                    primary_label,
-                    secondary_label,
-                    account, category,
-                    'A. Historical value' AS subcategory,
-                    value_base_token, base_token,
-                    (value_usd/value_base_token) AS period_price,
-                    value_usd,
-                    0
-                FROM accounts
-                WHERE primary_label LIKE '%3. Surplus%'
-        
-        ) accounts 
-        ORDER BY period, primary_label, secondary_label, account, category, subcategory
-    
-        )
-    )
-),
-
-surplus_m2m AS (
-
-    SELECT
-        period,
-        '3. Surplus' AS primary_label,
-        '3.4. Currency translation' AS secondary_label,
-        '3.4.1. Currency translation effects' AS account,
-        
-        CASE 
-            WHEN primary_label LIKE '%1. Assets%' THEN '3.4.1.1. Changes in assets'
-            WHEN primary_label LIKE '%2. Liabilities%' THEN '3.4.1.2. Changes in liabilities'
-        END AS category,
-        'B. M2M' AS subcategory,
-        value_base_token,
-        base_token,
-        period_price,
-        
-        CASE 
-            WHEN primary_label LIKE '%1. Assets%' THEN value_translation_usd
-            WHEN primary_label LIKE '%2. Liabilities%' THEN -value_translation_usd
-        END AS value_translation_usd
-        
-        
-    FROM final_m2ms
-    WHERE subcategory LIKE '%B. M2M%'
-)
-
-    SELECT * FROM final_m2ms
-    UNION ALL 
-    SELECT * FROM surplus_m2m
-*/
